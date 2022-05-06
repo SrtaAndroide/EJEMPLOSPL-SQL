@@ -1,0 +1,127 @@
+VAR B_AFP NUMBER;
+VAR B_ISAPRE NUMBER;
+
+EXEC :B_AFP:=10;
+EXEC :B_ISAPRE:=7;
+
+DECLARE
+
+    V_MIN_POST                  NUMBER(3);
+    V_MAX_POST                  DATO_POSTULACION.NUMERO_POSTULACION%TYPE;
+    V_NUMERO_POSTULACION        DATO_POSTULACION.NUMERO_POSTULACION%TYPE;
+    V_FECHA_PROCESO             DATE;
+    V_NOMBRE                    VARCHAR2(50);
+    V_FECHA_INICIO_TRABAJO      DATE;
+    V_SUELDO_LIQ                DATO_POSTULACION.SUELDO_BRUTO%TYPE;
+    V_ID_PROFESION              DATO_POSTULACION.ID_PROFESION%TYPE;
+    V_ID_ESTADO_CIVIL           DATO_POSTULACION.ID_ESTADO_CIVIL%TYPE;
+    V_COD_PRODUCTO              DATO_POSTULACION.COD_PRODUCTO%TYPE;
+    V_MONTO_SOLICITADO_CTACOR   DATO_POSTULACION.MONTO_SOLICITADO_CTACOR%TYPE;
+    V_ANTIGUEDAD                NUMBER(2);
+    V_PUNTO_ANT                 NUMBER(3);
+    V_PUNTO_LIQ                 NUMBER(10);
+    V_PUNTO_PROF                NUMBER(3);
+    V_PUNTO_CIVIL               NUMBER(3);
+    V_PUNTO_TOTAL               NUMBER(4);
+    V_DESC                      PRODUCTO.DESCRIPCION%TYPE;
+    V_PUNTO_MIN                 PRODUCTO.PUNTO_MINIMO%TYPE;
+    V_MONTO_CTA_APER            NUMBER(10);
+    V_MENSAJE                   MENSAJE_SISTEMA.MENSAJE_SISTEMA%TYPE;
+
+BEGIN
+
+        EXECUTE IMMEDIATE 'TRUNCATE TABLE RESULTADO_CTA';
+
+        SELECT MIN(NUMERO_POSTULACION), MAX(NUMERO_POSTULACION)
+            INTO V_MIN_POST, V_MAX_POST
+        FROM DATO_POSTULACION;
+    
+    FOR I IN V_MIN_POST..V_MAX_POST LOOP
+     BEGIN
+    
+        SELECT NUMERO_POSTULACION,SYSDATE, 
+            NOMBRE||' '||PATERNO||' '||MATERNO,
+            TRUNC(MONTHS_BETWEEN(SYSDATE,FECHA_INICIO_TRABAJO)/12),
+            TRUNC(SUELDO_BRUTO-SUELDO_BRUTO * (:B_AFP+:B_ISAPRE)/100),
+            ID_PROFESION,
+            ID_ESTADO_CIVIL,COD_PRODUCTO, 
+            MONTO_SOLICITADO_CTACOR
+        INTO V_NUMERO_POSTULACION, V_FECHA_PROCESO,
+             V_NOMBRE,V_ANTIGUEDAD,
+             V_SUELDO_LIQ,
+             V_ID_PROFESION,
+             V_ID_ESTADO_CIVIL,V_COD_PRODUCTO,V_MONTO_SOLICITADO_CTACOR
+        FROM DATO_POSTULACION
+        WHERE NUMERO_POSTULACION=I;
+        
+        
+        SELECT NVL(PUNTO,0)
+            INTO V_PUNTO_ANT
+        FROM RANGO_ANTIGUEDAD
+        WHERE RANGO_ANT_MIN <= V_ANTIGUEDAD AND RANGO_ANT_MAX >= V_ANTIGUEDAD;
+        
+        SELECT NVL(PUNTO,0)
+            INTO V_PUNTO_LIQ
+        FROM RANGO_SUELDO_LIQ
+        WHERE RANGO_SUELDO_MIN <= V_SUELDO_LIQ AND RANGO_SUELDO_MAX >= V_SUELDO_LIQ;
+        
+        
+        SELECT NVL(PUNTO,0)
+            INTO V_PUNTO_PROF
+        FROM PROFESION
+        WHERE ID_PROFESION = V_ID_PROFESION;
+        
+        SELECT NVL(PUNTO,0)
+            INTO V_PUNTO_CIVIL
+        FROM ESTADO_CIVIL
+        WHERE ID_ESTADO_CIVIL=V_ID_ESTADO_CIVIL;
+        
+        V_PUNTO_TOTAL:= V_PUNTO_ANT + V_PUNTO_LIQ + V_PUNTO_PROF + V_PUNTO_CIVIL;
+        
+        SELECT DESCRIPCION, PUNTO_MINIMO
+            INTO V_DESC, V_PUNTO_MIN
+        FROM PRODUCTO
+        WHERE COD_PRODUCTO = V_COD_PRODUCTO;
+        
+        IF V_PUNTO_MIN <= V_PUNTO_TOTAL THEN
+        
+            V_MONTO_CTA_APER:=V_MONTO_SOLICITADO_CTACOR *1.5;
+            
+            SELECT MENSAJE_SISTEMA
+                INTO V_MENSAJE
+            FROM MENSAJE_SISTEMA
+            WHERE COD_MENSAJE = 'ACEPTCTA';
+            
+        ELSE
+            V_MONTO_CTA_APER:=0;
+                        
+            SELECT MENSAJE_SISTEMA
+                INTO V_MENSAJE
+            FROM MENSAJE_SISTEMA
+            WHERE COD_MENSAJE = 'RECHACTA';
+            
+        END IF;
+        
+        
+        INSERT INTO RESULTADO_CTA VALUES ( V_NUMERO_POSTULACION,
+                                           V_FECHA_PROCESO,
+                                           SYSDATE,
+                                           V_NOMBRE,
+                                           V_PUNTO_ANT,
+                                           V_PUNTO_LIQ,
+                                           V_PUNTO_PROF,
+                                           V_PUNTO_CIVIL,
+                                           V_PUNTO_TOTAL,
+                                           V_DESC,
+                                           V_MONTO_CTA_APER,
+                                           V_MENSAJE);
+        COMMIT;   
+     EXCEPTION
+     WHEN NO_DATA_FOUND THEN
+        DBMS_OUTPUT.PUT_LINE(I);
+     END;
+    END LOOP;
+END; 
+/
+SELECT * FROM
+RESULTADO_CTA;
